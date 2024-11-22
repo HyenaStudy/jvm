@@ -44,10 +44,37 @@
 그렇지만 커피 머신이 한 대라면 결국 대기 시간은 발생할 수밖에 없다.<br />
 이 과정에서 기다리는 두 사람은 티스푼이나 시럽을 가지러 가는 것이 시간상 효율적이다. -> 동시성 
 
+---
 
+*참고*<br />
+*https://oxylabs.io/blog/concurrency-vs-parallelism*<br />
+*https://stackoverflow.com/questions/1050222/what-is-the-difference-between-concurrency-and-parallelism*
 
 ---
 
-*참고*
-*https://oxylabs.io/blog/concurrency-vs-parallelism*
-*https://stackoverflow.com/questions/1050222/what-is-the-difference-between-concurrency-and-parallelism*
+# 12.2
+
+## 캐시 일관성 프로토콜
+
+### 1. 캐시의 존재 의의
+
+![image](https://github.com/user-attachments/assets/83b7ab2d-c05b-4b1c-9bee-e35b1e6f9c2a)
+
+프로세서가 데이터를 읽고 작업 결과를 저장한 메모리에 접근해서 읽어오는 속도가 너무 느리다.<br />
+그래서 프로세서와 메모리 사이에 캐시를 두고 좀 더 빠르게 원하는 데이터를 조회해오는 것이다.
+
+### 2. 멀티 프로세서에서의 고려할 점
+
+![image](https://github.com/user-attachments/assets/483a60c6-2f78-43b6-9f46-8f3f5ee54603)
+
+메모리가 업데이트되면 캐시도 같이 업데이트해서 일관화를 이끌어내는 것은 중요하다.<br />
+멀티 프로세서에서는 공유 메인 메모리를 기반으로 각자의 캐시를 가지게 되는데, 분명히 프로세서별 캐시 데이터가 다를 수 있다.<br />
+이때 **메인 메모리로 데이터를 동기화할 때 어떤 프로세서가 기준이 될 지**를 고려해야 한다.
+
+### 3. JVM에서의 개념 접목
+
+자바의 대표적인 특징이 **멀티 스레딩**이다.<br />
+멀티 스레드가 동일 메모리 영역에 접근할 때, 메모리 일관성을 유지해야 한다.<br />
+바로 이 **메모리 일관성을 유지하기 위한 자체적인 메모리 모델(JMM : Java Memory Model)이, 캐시 일관성 프로토콜을 위한 메모리 모델과 유사**하다.<br />
+어떻게 보면 하드웨어에서의 캐시 일관성을 위한 향상책 고민이 곧 JVM에서의 동시성 문제 해결을 위한 고민과 일맥상통한다고 볼 수 있다.
+
