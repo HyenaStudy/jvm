@@ -44,11 +44,116 @@ JMM에서는 **스레드의 작업 메모리와 메인 메모리 간 동기화�
 
 ## volatile 키워드
 
-### 1. 예제 코드
+### 1. 개념 정리
 
-#### (1) 595p 코드 12-1 수정
+#### (1) 정의 및 용도
+
+`volatile` 키워드는 **자바 코드의 변수를 메인 메모리에 저장할 것을 명시**한다.<br />
+메인 메모리와 작업 메모리 간의 데이터 일관성을 보장하고, 변수의 쓰기 작업이 즉각 메인 메모리에 반영케 한다.<br />
+두 개의 스레드가 `counter`라는 변수를 읽고 있다고 생각해보자.
+
+![image](https://github.com/user-attachments/assets/69176b86-55d0-4b2a-b3ea-5ba799aa53fe)
+
+스레드 1이 `counter` 변수를 0에서 7로 바꿔도, 스레드 2는 이를 모른다. 이를 **가시성의 문제**라고 한다.<br />
+여기서 `counter` 변수에게 `volatile` 키워드를 부여하면 메인 메모리와 작업 메모리의 변수 값이 동일해질 수 있다.<br />
+즉, 단일 스레드 상황에서는 메인 메모리와 작업 메모리 간의 변수 일관성을 유지할 수 있게 된다.<br />
+
+또한, **명령어 재정렬을 방지**한다. JVM과 CPU는 최적화를 위해 명령어 실행 순서를 조정할 수 있다.<br />
+`volatile` 키워드는 메모리 배리어를 삽입하여 읽기 -> 쓰기 순서를 보장하게 된다.
+
+#### (2) 동시성 이슈의 해결책?
+
+다만 이것을 멀티 스레드 상황으로 넓히면 상황이 복잡해진다.<br />
+아래의 상황은, 멀티 스레드에서 메인 메모리의 `a` 변수에 접근하면서 연산(처리)하는 상황이다.
+
+![image](https://github.com/user-attachments/assets/514a8383-a131-4600-8764-e811798307be)
+
+이것을 순전히 `volatile` 키워드만 쓰면, 단일 스레드 관점에서는 변수의 최신화는 보장된다.<br />
+다만 그것이 복수의 스레드가 동시 접근하는 **경합 상황**에서는 전혀 소용이 없다.<br />
+
+>1. 스레드1이 `a` 변수에 접근해서 가지고 온다.
+>2. 스레드2도 `a` 변수에 접근해서 가지고 온다.
+>3. 스레드1이 `a` 변수에 +5 연산을 수행한다.
+>4. 스레드1이 `a` 변수를 쓴다. -> 여기에서 `volatile`이 있어도 메인 메모리 변수가 20으로 일관화된다.
+>5. 스레드2가 `a` 변수에 +15 연산을 수행한다.
+>6. 스레드2가 `a` 변수를 쓴다. -> 여기에서 `volatile`이 있어도 메인 메모리 변수가 30으로 일관화된다.
+>7. 우리가 기대했던 `a` 변수 값이 각 스레드의 의도에 부합하지 않는다.
+
+#### (3) 예제 코드
+
+직접 코드로 구현해서 `volatile` 키워드가 어떤 의미를 가지는지 확인해보자.<br />
 
 ```java
+public class VolatileTest {
+    private static boolean running = true;
+
+    public static void main(String[] args) {
+
+        // 스레드 1: running 값에 따라 동작
+        Thread thread1 = new Thread(() -> {
+            while (running) {
+                /**
+                 * 여기에 sout 같은 로직을 넣으면 thread1이 sout를 호출하는 순간 CPU 양보
+                 * 그 틈에 main 스레드가 실행될 수 있는 기회를 가지고, running -> false 할당
+                 * 그래서 루프 종료
+                 */
+            }
+
+            System.out.println("Thread 1: running 값 변경 감지, 루프 종료");
+        });
+
+        thread1.start();
+
+        try {
+            Thread.sleep(2000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        System.out.println("Main Thread: 2초 후, running 값 false 변경");
+        running = false;
+
+        // 스레드 종료 대기
+        try {
+            thread1.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        System.out.println("Main Thread: 모든 작업 완료");
+    }
+}
+```
+
+>#### 예상 시나리오
+>1. main 스레드와 thread1 스레드가 있다.
+>2. 2초 후, `running` 변수가 `false`로 바뀐다.
+>3. 그로 인해 thread1의 로직이 종료되고 main도 종료된다.
+
+하지만 실행 결과는 아래처럼 `running` 변수가 `false`로 변해도 무한히 앱이 동작한다. 즉 스레드가 종료되지 않는다.
+
+<img width="540" alt="스크린샷 2024-11-24 오후 4 19 50" src="https://github.com/user-attachments/assets/04ac1f65-ccf2-4715-a7a4-fefaac47c11d">
+
+이유는, 하나의 스레드(`main`)에서 값을 변경한 후 다른 스레드(`thread1`)가 그 값을 즉시 읽지 못하기 때문이다.<br />
+**캐시 일관성 문제**로, thread1에서 `running` 값이 `false`로 변경돼도, thread1이 `running` 값을 캐시로 읽어와서 계속 `true`로 인식하는 것이다.
+
+이제, 여기서 `ruuning` 변수에 `volatile` 키워드를 부여해보고 다시 실행해보자.
+```java
+public class VolatileTest {
+    private static volatile boolean running = true;
+
+    // ...
+```
+<img width="545" alt="스크린샷 2024-11-24 오후 4 25 59" src="https://github.com/user-attachments/assets/4b8fa860-81a7-451a-8b6b-77276717244d">
+
+`Process finished with exit code 0`, 즉 오류나 외부 개입 없이 앱이 정상적으로 종료됐다.<br />
+`volatile` 키워드로 메인 메모리에서 읽기 및 쓰기 연산을 하도록 보장돼서 예상 시나리오대로 동작했다.
+
+이제 이것을 복수의 스레드, 즉 멀티 스레드 환경으로 시나리오를 확장해보자.
+
+```java
+//  595p 코드 12-1 수정 ver
+
 public class VolatileTest {
     public static volatile int race = 0;
 
@@ -88,41 +193,20 @@ public class VolatileTest {
 `Thread.activeCount()`는 현재 JVM 내의 모든 스레드 개수를 반환하게 된다.<br />
 만약 별개의 클래스에서 구현하면 메인 스레드는 종료되지 않으므로 무한루프에 걸리게 된다.<br />
 즉, 모든 스레드가 종료됐는지 여부만 판별하고 특정 스레드의 세부적인 종료 여부는 고려하지 않기 때문에 적절한 메소드가 아니라고 생각했다.<br />
+또한, `Thread.yield()`는 다른 스레드의 종료 대기를 보장하지 않음. 반대로 `join()`은 다른 스레드의 종료 대기를 보장한다.
 
-`Thread.yield()`는 다른 스레드의 종료 대기를 보장하지 않음. 반대로 `join()`은 다른 스레드의 종료 대기를 보장함.
+아무튼 예상 시나리오를 확인하고 결과를 확인해보자.
 
-#### (2) 실행 결과
+>1. 20개의 스레드가 할당된다.
+>2. 각 스레드는 `increase()` 메소드를 10000번 호출한다.
+>3. 그로 인해 `race` 변수가 200000으로 업데이트된다.
 
 <img width="732" alt="스크린샷 2024-11-23 오후 6 26 27" src="https://github.com/user-attachments/assets/6c233412-df07-4e29-9256-baa9a540326c">
 
-### 2. 개념 정리
+`volatile` 키워드가 붙여졌음에도, 멀티 스레드 환경에서는 동시성 문제가 해결되지 않는 것을 확인할 수 있다.<br />
+즉, 메모리 가시성 문제에는 `volatile` 키워드로 충분히 커버되지만 동시성 문제를 해결하기에는 미흡하다.
 
-#### (1) 정의 및 용도
-
-`volatile` 키워드는 **자바 코드의 변수를 메인 메모리에 저장할 것을 명시**한다.<br />
-메인 메모리와 작업 메모리 간의 데이터 일관성을 보장하고, 변수의 쓰기 작업이 즉각 메인 메모리에 반영케 한다.<br />
-두 개의 스레드가 `counter`라는 변수를 읽고 있다고 생각해보자.
-
-![image](https://github.com/user-attachments/assets/69176b86-55d0-4b2a-b3ea-5ba799aa53fe)
-
-스레드 1이 `counter` 변수를 0에서 7로 바꿔도, 스레드 2는 이를 모른다. 이를 **가시성의 문제**라고 한다.<br />
-여기서 `counter` 변수에게 `volatile` 키워드를 부여하면 메인 메모리와 작업 메모리의 변수 값이 동일해질 수 있다.<br />
-즉, 단일 스레드 상황에서는 메인 메모리와 작업 메모리 간의 변수 일관성을 유지할 수 있게 된다.
-
-#### (2) 동시성 이슈의 해결책?
-
-다만 이것을 멀티 스레드 상황으로 넓히면 상황이 복잡해진다.<br />
-아래의 상황은, 멀티 스레드에서 메인 메모리의 `counter` 변수에 접근하면서 +1 하는 상황이다.
-
-![image](https://github.com/user-attachments/assets/8d454459-3219-46ea-bcf7-8187de60d45d)
-
-이것을 순전히 `volatile` 키워드만 쓰면, 단일 스레드 관점에서는 변수의 최신화는 보장된다.<br />
-다만 그것이 복수의 스레드가 동시 접근하는 **경합 상황**에서는 전혀 소용이 없다.<br />
-
->1. 스레드1이 `counter` 변수에 접근해서 가지고 온다.
->2. 스레드2도 `counter` 변수에 접근해서 가지고 온다.
->3. 스레드1이 `counter` 변수에 +1 연산을 수행한다.
->4. 스레드1이 `counter` 변수를 쓴다. -> 여기에서 `volatile`이 있어도 메인 메모리 변수가 1일 뿐이다.
->5. 스레드2가 `counter` 변수에 +1 연산을 수행한다.
->6. 스레드2가 `counter` 변수를 쓴다. -> 여기에서도 `volatile`이 있어도 메인 메모리 변수가 1일 뿐이다.
->7. 우리가 기대했던 `counter` 변수 값이 2가 되지 않는다.
+위의 이유는 `increase()` 메소드의 작업 구조 때문이다.<br />
+`race` 변수를 가져오는 **읽기 작업**과 , 즉 읽어온 `race` 변수를 +1하는 연산인 **쓰기** 작업이 분리됐다.<br />
+`volatile` 키워드는 **읽기**에 있어서는 메인 메모리에서 가져오도록 보장시켜준다. 그렇지만 **쓰기**에는 아무런 관여가 없다.<br />
+이 두 작업이 **원자적이지 않기 때문**에 동시성 문제는 여전히 남아있는 것이다.
