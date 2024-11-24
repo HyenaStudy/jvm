@@ -213,5 +213,101 @@ public class VolatileTest {
 
 ## synchronized 키워드
 
+`volatile`은 메인 메모리의 값 읽기와 쓰기를 즉시 반영하도록 보장하지만, 멀티 스레드에서 동시에 객체에 접근할 경우 데이터의 일관성을 유지하지 못한다.<br />
+여기서 확인할 수 있는 근본적인 문제의 키워드는 **멀티 스레드가 객체에 동시에 접근하게 되는 것**이다.
+이를 해결하려고 **하나의 스레드가 객체를 사용하는 동안 다른 스레드의 접근을 차단하고, 데이터의 일관성과 동기화를 보장**하는 것이 `synchronized` 키워드의 역할이다.
+
+![image](https://github.com/user-attachments/assets/b3d307c6-1fd4-4fd0-ae9d-da10cbc3b4bd)
+
+자바의 모든 객체는 **내재적 잠금**을 포함하며, 이것이 객체에 대한 동기화 접근을 제어한다.<br />
+여기서 `synchronized` 블록 혹은 메소드가 호출될 때, 스레드가 해당 객체의 잠금을 해제해야 블록 내 코드를 실행할 수 있다.<br />
+이런 `synchronized` 키워드는 **모니터 락** 혹은 **내재적 락**이라는 메커니즘을 통해 동작한다.<br />
+
+*참고로, 모든 객체가 내재적 잠금을 갖고 있어 `synchronized` 키워드로 잠금이 구현되는 자바와 달리 C#은 `Monitor` 클래스를 기반으로 직접 구현한다.*
+
+메소드 혹은 동기화 강제가 필요한 코드에 `synchronized` 키워드를 붙여서 구현할 수 있다.
+
+```java
+# 동기화 메소드
+public static synchronized void increase() {
+    race++;
+}
+
+# 동기화 블록
+public static void increase() {
+    synchronized (SynchronizedTest.class) {race++;}
+}
+```
+<img width="542" alt="스크린샷 2024-11-24 오후 7 53 27" src="https://github.com/user-attachments/assets/b9a6a194-009e-4e55-9a1f-78baecf5b5d8">
+
+위처럼 동기화가 강제되면서 우리가 원하는 값을 도출할 수 있다.<br />
+
+참고로, 동기화 블록이 동기화 메소드보다 성능상 우위를 차지할 수 있다.<br />
+동기화 강제 작업이 필요한 연산에만 선별적으로 적용할 수 있기 때문이다.
+
+```java
+public class SynchronizedTest {
+    public static int race = 0;
+    private static final int THREAD_COUNT = 20;
+    private static final int ITERATIONS = 1_000_000;
+
+    public synchronized static void methodSync() {
+        for (int i = 0; i < 100; i++) {}
+
+        race++;
+    }
+
+    public static void blockSync() {
+        for (int i = 0; i < 100; i++) {}
+
+        synchronized (SynchronizedTest.class) {
+            race++;
+        }
+    }
+
+    public static void main(String[] args) {
+        long methodSyncTime = measureExecutionTime(() -> {
+            for (int i = 0; i < THREAD_COUNT; i++) {
+                new Thread(() -> {
+                    for (int j = 0; j < ITERATIONS; j++) {
+                        methodSync();
+                    }
+                }).start();
+            }
+        });
+
+        long blockSyncTime = measureExecutionTime(() -> {
+            for (int i = 0; i < THREAD_COUNT; i++) {
+                new Thread(() -> {
+                    for (int j = 0; j < ITERATIONS; j++) {
+                        blockSync();
+                    }
+                }).start();
+            }
+        });
+
+        System.out.println("동기화 메소드 실행 시간: " + methodSyncTime);
+        System.out.println("동기화 블록 실행 시간: " + blockSyncTime);
+    }
+
+    public static long measureExecutionTime(Runnable runnable) {
+        long start = System.nanoTime();
+        runnable.run();
+        long end = System.nanoTime();
+        return end - start;
+    }
+}
+```
+<img width="540" alt="스크린샷 2024-11-24 오후 8 16 22" src="https://github.com/user-attachments/assets/3bb754dd-2342-42d5-abbc-0dd977e6f3cc">
+
+
+
+
 
 ## 선 발생 원칙
+
+---
+
+*출처*
+*https://qkrqkrrlrl.tistory.com/174*
+*https://docs.oracle.com/javase/tutorial/essential/concurrency/locksync.html*
