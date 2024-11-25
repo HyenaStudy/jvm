@@ -25,13 +25,113 @@
 
 ## JNI
 
-일단 스레드를 공부하기 전에 **JNI(Java Native Interface)**를 공부해야 소스들이 이해될 것 같아서 얘부터 공부하자.
+일단 스레드를 공부하기 전에 **JNI**(Java Native Interface)를 공부해야 소스들이 이해될 것 같아서 얘부터 공부하자.<br />
+JNI는 **자바와 네이티브 코드(C, C#) 간의 상호작용**을 가능하게 하는 인터페이스다.<br />
+JVM 공부하는 데에 왜 뜬금없이 C가 나오나 싶지만, JVM과의 관계를 먼저 파악해야 한다.
+
+### 1. JNI와 JVM 간의 관계
+
+![image](https://github.com/user-attachments/assets/fc8433a9-5393-4aff-a1e0-9df7fb4ce347)
+
+앞서 말했듯, JNI는 자바와 네이티브 코드 간의 상호작용을 조율한다.<br />
+그리고 애시당초 JVM은 자바의 특징 중 하나인 **플랫폼 독립성**을 위해 설계됐다.<br />
+이 두 내용을 바탕으로 조금 더 세부적으로 파악해보자.
+
+>1. **JVM** 자체가 하나의 독립적인 플랫폼으로써 존재 의의가 있다.
+>2. 이를 통해, 자바 프로그램이 모든 플랫폼에서 동작할 수 있는 것이다.
+>3. JVM은 현재 동작하는 로컬의 운영체제(OS) 및 하드웨어 세부 사항을 추상화하여 플랫폼을 구축한다.
+>4. 그러나 실제 OS 내에서 조율되는 저수준 기능 및 고성능 처리는 자바로 조율하는 것이 불가능하다.
+>5. 대신 **C**, **C++** 등은 가능하다. 그렇기 때문에 자바가 불가능한 부분을 C, 즉 네이티브 코드가 맡는다.
+>6. 이로써 네이티브 코드가 맡는 기능과 자바 프로그램 간의 상호작용을 위해 **JNI**가 필요한 것이다.
+
+### 2. JNI 실습
+
+자바 코드의 키워드 중, `native`라는 키워드가 있다.<br />
+얘는 메소드에서 선언하며 해당 메소드가 자바가 아닌 다른 코드(C, C++)로 구현됐음을 명시한다.<br />
+통상 시스템 자원에 직접 접근하는 저수준 기능, 고성능 처리를 위할 때나 외부 라이브러리 사용 목적으로 쓴다.<br />
+
+이제 실습해보자.
+
+#### (1) 네이티브 메소드 선언
+
+```java
+package com.example.jni;
+
+public class NativeTest {
+    public native void nativeMethod();  // 네이티브 코드에서 구현할 시그니처 제공
+
+    static {
+        System.loadLibrary("native-lib");  // "native-lib" 네이티브 라이브러리 로드
+    }
+
+    public static void main(String[] args) {
+        new NativeTest().nativeMethod();  // 네이티브 라이브러리에서 구현된 코드를 실행하도록 트리깅
+    }
+}
+```
+
+#### (2) 헤더 파일 생성
+
+`NativeTest` 자바 파일의 경로에서 헤더 파일을 생성한다.
+
+```bash
+# javac -h {헤더 파일 생성 경로} {자바 파일 경로} 
+javac -h . NativeTest.java
+```
+
+<img width="1088" alt="헤더파일및디컴파일된파일생성" src="https://github.com/user-attachments/assets/8fa019a5-b88f-4191-9457-6d65a8d13a19">
+
+헤더 파일과 디컴파일된 파일이 생성된다.
+
+#### (3) C 기반 네이티브 메소드 작성
+
+C로 `com_example_jni_NativeTest.c` 파일을 생성하고 네이티브 메소드를 구현한다.<br />
+헤더 파일이 위치한 경로에서 생성한다.
+
+```c
+#include <jni.h>  // JNI 필수 헤더(Java <-> 네이티브 코드(C) 간의 인터페이스 정의 역할)
+#include "com_example_jni_NativeTest.h"  // 생성된 헤더 파일
+#include <stdio.h>  // 표준 입출력 사용을 위해 필요
+
+// 네이티브 메소드 구현
+JNIEXPORT void JNICALL Java_com_example_jni_NativeTest_nativeMethod
+  (JNIEnv *env, jobject obj) {
+    // 출력 메시지
+    printf("네이티브 메소드 구현\n");
+}
+```
+
+#### (4) 네이티브 라이브러리 컴파일
+
+C 소스 파일을 네이티브 라이브러리로 컴파일한다.
+
+```bash
+# gcc -I$JAVA_HOME/include -I$JAVA_HOME/include/darwin -shared -m64 -o {생성할 라이브러리 이름} {C 소스 파일 경로}
+gcc -I$JAVA_HOME/include -I$JAVA_HOME/include/darwin -shared -m64 -o libnative-lib.dylib com_example_jni_NativeTest.c
+```
+
+<img width="1094" alt="c컴파일" src="https://github.com/user-attachments/assets/0ed8368a-af1d-4eac-9a44-23baa6373e18">
+
+`.dylib` 확장자는 macos에서 사용하는 동적 라이브러리 확장자명이다.
+
+#### (5) 자바 프로그램 실행
+
+자바 프로그램을 실행하면서, 네이티브 라이브러리를 로드하고 클래스 경로를 설정한다.
+
+```bash
+# java -Djava.library.path={생성한 라이브러리 위치} -classpath {컴파일된 클래스 파일 위치} {실행할 클래스명}
+java -Djava.library.path=/Users/kimdongjun/Desktop/BackEnd/jvm-study/src/main/java/com/example/jni \
+     -classpath /Users/kimdongjun/Desktop/BackEnd/jvm-study/src/main/java \
+     com.example.jni.NativeTest
+```
+
+<img width="1098" alt="실행" src="https://github.com/user-attachments/assets/ba98a4eb-cb33-4af2-a75c-1cec8b811c86">
+
 
 ## 자바 스레드
 
-### 1. 플랫폼 스레드
-
-### 2. 가상 스레드
+아까 위에서 JVM 및 JNI의 역할과 존재 의의에 대해 알아봤다.<br />
+근데 이것이 스레드와 무슨 관계가 있냐면, 자바 코드의 스레드를 넘어 실제 운영체제의 스레드까지 알아야 한다.
 
 
 ---
