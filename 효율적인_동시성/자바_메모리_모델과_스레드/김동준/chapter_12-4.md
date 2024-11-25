@@ -127,12 +127,65 @@ java -Djava.library.path=/Users/kimdongjun/Desktop/BackEnd/jvm-study/src/main/ja
 
 <img width="1098" alt="실행" src="https://github.com/user-attachments/assets/ba98a4eb-cb33-4af2-a75c-1cec8b811c86">
 
+`nativeMethod()`가 호출되면서, C로 작성된 네이티브 코드가 실행된다.
+
 
 ## 자바 스레드
 
 아까 위에서 JVM 및 JNI의 역할과 존재 의의에 대해 알아봤다.<br />
 근데 이것이 스레드와 무슨 관계가 있냐면, 자바 코드의 스레드를 넘어 실제 운영체제의 스레드까지 알아야 한다.
 
+### 1. 자바 스레드의 동작
+
+자바의 코드 레벨에서 작성되는 스레드(`Thread` 클래스, `Runnable` 인터페이스)는 추상적인 모델이다.<br />
+그리고 이 스레드 모델은 실제 운영체제에서 실제로 동작하는 커널 스레드와 1대 1로 매핑된다.<br />
+이 과정에서 실제 커널 스레드가 생성되는 것에서 JNI가 관여한다. `Thread` 클래스를 탐색해 보면...
+
+```java
+// Thread class
+
+    public void start() {
+        synchronized (this) {
+            // zero status corresponds to state "NEW".
+            if (holder.threadStatus != 0)
+                throw new IllegalThreadStateException();
+            start0();
+        }
+    }
+
+    // ...
+
+    private native void start0();
+```
+
+네이티브 메소드인 `start0()`가 선언되어 있다. 즉, **매핑돼는 커널 스레드의 생성에서 JNI가 관여(중재)**한다.<br />
+자바 스레드의 스케줄링 및 상태 관리 등은 JVM이 맡고 네이티브 코드에서의 스레드 제어를 JNI가 맡게 된다.<br />
+
+### 2. 기존 스레드의 문제점
+
+![image](https://github.com/user-attachments/assets/53fbca7b-8a23-461d-8722-295660e0ee53)
+
+JVM 및 JNI의 관여 과정을 통해 자바 스레드가 어떻게 생성되고 관리되는 지를 확인했다.<br />
+그러나 그 과정에서 기존 자바 스레드의 문제점이 대두된다. 기존 스레드의 문제점들을 간략히 정리해보자
+
+#### (1) 커널 스레드 생성
+
+자바의 스레드 모델에 매핑되는 커널 스레드 생성에도 **메모리 할당**, **운영체제 API** 호출 등의 비용이 발생한다.<br />
+보통 자바 스레드의 스택은 1 MB 정도로 설정돼서, 10000개의 스레드를 생성하는 데에 10 GB의 메모리가 필요하다.
+
+#### (2) 컨텍스트 스위치
+
+**스레드 스케줄링**은 운영체제가 CPU를 여러 스레드 사이에서 분배하는 과정을 말한다.<br />
+이 OS 스케줄러가 커널 스레드 간의 전환, 즉 **컨텍스트 스위치**를 처리하는 데 높은 비용이 든다. <br />
+당연히 스레드 수가 많아질수록 전환 횟수와 비용이 증가해 성능 저하를 초래한다.
+
+#### (3) 동시성 처리
+
+동시성 문제의 해결은 스레드 수가 많을 때 의미가 뚜렷해진다.<br />
+그런데 스레드를 생성할 수록 메모리 소모 및 스케줄링 부담이 커지게 된다.<br />
+비동기 프로그래밍 등으로 극복할 수는 있지만, 이는 유지보수에 어려움을 유발한다.
+
+위의 문제들을 해결하기 위해 JDK 21에서 **가상 스레드**가 도입된다.
 
 ---
 
@@ -140,4 +193,5 @@ java -Djava.library.path=/Users/kimdongjun/Desktop/BackEnd/jvm-study/src/main/ja
 *https://www.geeksforgeeks.org/difference-between-user-level-thread-and-kernel-level-thread/*<br />
 *https://jofestudio.tistory.com/138*<br />
 *https://letsmakemyselfprogrammer.tistory.com/98*<br />
-*https://d2.naver.com/helloworld/1203723*
+*https://d2.naver.com/helloworld/1203723*<br />
+*https://velog.io/@on5949/%EC%8A%A4%ED%84%B0%EB%94%94%EC%84%B8%EB%AF%B8%EB%82%98-Java%EC%9D%98-%EB%AF%B8%EB%9E%98-Virtual-Thread*
