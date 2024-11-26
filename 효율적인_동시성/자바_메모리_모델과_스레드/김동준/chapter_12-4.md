@@ -158,7 +158,7 @@ java -Djava.library.path=/Users/kimdongjun/Desktop/BackEnd/jvm-study/src/main/ja
     private native void start0();
 ```
 
-네이티브 메소드인 `start0()`가 선언되어 있다. 즉, **매핑돼는 커널 스레드의 생성에서 JNI가 관여(중재)**한다.<br />
+네이티브 메소드인 `start0()`가 선언되어 있다. 즉, 매핑되는 커널 스레드의 생성에서 **JNI가 관여(중재)**한다.<br />
 자바 스레드의 스케줄링 및 상태 관리 등은 JVM이 맡고 네이티브 코드에서의 스레드 제어를 JNI가 맡게 된다.<br />
 
 ### 2. 기존 스레드의 문제점
