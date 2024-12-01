@@ -130,45 +130,45 @@ public class ConditionalSafety {
 
 ```java
 private static class SharedResource {
-        private final Lock lock1 = new ReentrantLock();  // 락 객체 1
-        private final Lock lock2 = new ReentrantLock();  // 락 객체 2
+    private final Lock lock1 = new ReentrantLock();  // 락 객체 1
+    private final Lock lock2 = new ReentrantLock();  // 락 객체 2
 
-        public void method1() {
-            lock1.lock();
-            try {
-                System.out.println(Thread.currentThread().getName() + " lock1 획득, lock2 잠금 시도중...");
-                Thread.sleep(100);
-                lock2.lock();
-                try {
-                    System.out.println(Thread.currentThread().getName() + " lock2 획득");
-                } finally {
-                    lock2.unlock();
-                }
-            } catch (InterruptedException e) {
-                System.err.println(Thread.currentThread().getName() + " interrupted");
-            } finally {
-                lock1.unlock();
-            }
-        }
-
-        public void method2() {
+    public void method1() {
+        lock1.lock();
+        try {
+            System.out.println(Thread.currentThread().getName() + " lock1 획득, lock2 잠금 시도중...");
+            Thread.sleep(100);
             lock2.lock();
             try {
-                System.out.println(Thread.currentThread().getName() + " lock2 획득, lock1 잠금 시도중...");
-                Thread.sleep(100);
-                lock1.lock();
-                try {
-                    System.out.println(Thread.currentThread().getName() + " lock1 획득");
-                } finally {
-                    lock1.unlock();
-                }
-            } catch (InterruptedException e) {
-                System.err.println(Thread.currentThread().getName() + " interrupted");
+                System.out.println(Thread.currentThread().getName() + " lock2 획득");
             } finally {
                 lock2.unlock();
             }
+        } catch (InterruptedException e) {
+            System.err.println(Thread.currentThread().getName() + " interrupted");
+        } finally {
+            lock1.unlock();
         }
     }
+
+    public void method2() {
+        lock2.lock();
+        try {
+            System.out.println(Thread.currentThread().getName() + " lock2 획득, lock1 잠금 시도중...");
+            Thread.sleep(100);
+            lock1.lock();
+            try {
+                System.out.println(Thread.currentThread().getName() + " lock1 획득");
+            } finally {
+                lock1.unlock();
+            }
+        } catch (InterruptedException e) {
+            System.err.println(Thread.currentThread().getName() + " interrupted");
+        } finally {
+            lock2.unlock();
+        }
+    }
+}
 ```
 
 위의 코드는 두 개의 잠금 객체를 필드로 가지는 전역 내부 클래스, `SharedResource`다.<br />
@@ -186,4 +186,34 @@ private static class SharedResource {
 >4. 이는 스레드 2에서도 마찬가지다. `lock2`를 획득한 상태에서 `lock1`을 잠그려고 시도하지만 <br />
 >역시나 스레드 1이 선점했기 때문에 무한히 기다린다.
 
+
+## 스레드 안전성 보장
+
+### 1. synchronized vs java.util.concurrent.locks.Lock
+
+| 특성                       | `synchronized`                                 | `Lock` 인터페이스                             |
+|----------------------------|-----------------------------------------------|--------------------------------------------|
+| **사용법**                  | 코드 블록이나 메서드에 키워드 사용             | `lock()`와 `unlock()` 메서드로 락 관리        |
+| **락 제어**                 | 자동 락 관리 (암시적)                         | 수동 락 관리 (명시적)                         |
+| **락 획득 실패 처리**        | 불가능                                       | `tryLock()`을 사용해 실패를 처리할 수 있음   |
+| **교착 상태 처리**          | 교착 상태를 직접 관리하기 어려움              | 교착 상태를 관리할 수 있는 기능 제공        |
+| **인터럽트 처리**           | 인터럽트 처리 불가능                         | `lockInterruptibly()`로 인터럽트 가능        |
+| **성능**                    | JVM에서 제공하는 기본 기능이므로 성능이 우수  | 유연한 기능을 제공하나 약간의 성능 오버헤드가 있음 |
+
+### 2. 나름의 성능 비교 테스트
+
+문득 저 둘의 성능이 궁금해서 간단하게 JUnit으로 테스트를 해봤다.<br />
+사실 예상은 `Lock` 인터페이스가 조금 더 괜찮지 않을까 싶었으나... 스레드풀 서비스 선택 전략에 따라 다르게 나타났다.
+
+<img width="944" alt="스크린샷 2024-12-02 오전 3 10 23" src="https://github.com/user-attachments/assets/c81ca7d2-8618-4ded-a6cc-c0c15490233c">
+
+위의 테스트 케이스는 `newFixedThreadPool(THREAD_COUNT)`를 기반으로 스레드들을 생성한 경우다.<br />
+이것은 내 예상대로 `Lock` 인터페이스 기반이 근소하게나마 우위를 차지했다.
+
+<img width="878" alt="스크린샷 2024-12-02 오전 3 06 30" src="https://github.com/user-attachments/assets/57d76de8-9d00-48ba-94e4-7274916c0255">
+
+반면, 이것은 `newVirtualThreadPerTaskExecutor()`을 기반으로 스레드들을 생성한 경우다.<br />
+이 경우에는 `synchronized` 기반이 우위를 차지했다.
+
+내 생각에는 원칙적으로는 락 경합 상태에서 `synchronized`는 컨텍스트 스위칭 비용이 들지만 `Lock`에서는 해당 구현체인 `ReentrantLock`이 스핀 락과 대기 큐를 효율적으로 관리하므로 실행 시간이 더 짧게 나오지만, 가상 스레드가 OS 비용에서 더 효율적이기 때문에 상대적으로 `synchronized`가 우위를 차지하는 것이 아닌가 싶다.
 
