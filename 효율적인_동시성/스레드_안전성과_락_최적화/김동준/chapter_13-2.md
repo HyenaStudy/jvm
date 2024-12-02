@@ -215,5 +215,5 @@ private static class SharedResource {
 반면, 이것은 `newVirtualThreadPerTaskExecutor()`을 기반으로 스레드들을 생성한 경우다.<br />
 이 경우에는 `synchronized` 기반이 우위를 차지했다.
 
-내 생각에는 원칙적으로는 락 경합 상태에서 `synchronized`는 컨텍스트 스위칭 비용이 들지만 `Lock`에서는 해당 구현체인 `ReentrantLock`이 스핀 락과 대기 큐를 효율적으로 관리하므로 실행 시간이 더 짧게 나오지만, 가상 스레드가 OS 비용에서 더 효율적이기 때문에 상대적으로 `synchronized`가 우위를 차지하는 것이 아닌가 싶다.
+내 생각에는 원칙적으로는 락 경합 상태에서 `synchronized`는 컨텍스트 스위칭 비용이 들지만 `Lock`에서는 해당 구현체인 `ReentrantLock`이 스핀 락과 대기 큐를 효율적으로 관리하므로 실행 시간이 더 짧게 나오지만, 가상 스레드가 OS 비용에서 더 효율적이기 때문에 JVM 내부에서 최적화가 잘 딘 `synchronized`가 간단한 반복 연산에 대해서 우위를 차지하는 것이 아닌가 싶다. 실행 시간을 비교하는 게 아닌 메모리 사용량 등을 비교하는 것이 더 의미가 있겠다...(사실 다른 테스트들도 그렇겠지만)
 
