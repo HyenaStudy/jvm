@@ -167,4 +167,80 @@ public class CustomReadWriteLock {
 로그가 뒤죽박죽이고 읽기 스레드의 값이 다르게 나오는 이유는 애시당초 `ExecutorService` 기반으로 동작시키며 병렬 실행되기 때문이다.<br />
 즉, 스레드들은 섞여 실행되지만 내부는 `ReentrantWriteReadLock` 때문에 안전하게 데이터 증가 연산이 원자적으로 이뤄질 수 있는 것이다.
 
+### (3) 네임드 락
+공유 리소스 자원에게 이름을 붙여, 스레드가 이름을 참조했을 경우에 락을 힉득하게 된다.<br />
+이름 기반으로 동시성이 관리되기 때문에 다수의 충돌에도 특정 리소스의 보호 정도가 강하다.<br />
+단점은 결국 이름 기반으로 리소스를 관리하기 때문에 데드락 가능성이 커진다.<br />
+아래는 네임드 락의 커스텀 코드 및 순서도다.
 
+```java
+public class NamedLock {
+    private final Map<String, AtomicBoolean> lockMap = new HashMap<>();
+    private int count;
+
+    public NamedLock(int count) {
+        this.count = count;
+    }
+
+    public boolean referenceName(String lockName) {
+        while (lockMap.containsKey(lockName)) {
+            System.err.println(Thread.currentThread().getName() + " 이름 이미 참조 중");
+            Thread.yield();
+        }
+        lockMap.putIfAbsent(lockName, new AtomicBoolean(false));
+        return true;
+    }
+
+    public boolean lock(String lockName) {
+        AtomicBoolean lock = lockMap.get(lockName);
+        return lock != null && lock.compareAndSet(false, true);
+    }
+
+    public void unlock(String lockName) {
+        AtomicBoolean lock = lockMap.get(lockName);
+        if (lock != null) {
+            lock.set(false);
+        }
+    }
+
+    public void dereferenceName(String lockName) {
+        lockMap.remove(lockName);
+    }
+
+    public void execute(String lockName) {
+        if (referenceName(lockName)) {
+            try {
+                while (!lock(lockName)) {
+                    // 락을 획득하지 못했을 때, 다른 스레드에게 CPU 양보
+                    System.err.println(Thread.currentThread().getName() + " 락 획득 실패");
+                    Thread.yield();
+                }
+                try {
+                    System.out.println(Thread.currentThread().getName() + " 락 획득");
+                    count++;
+                } finally {
+                    unlock(lockName);
+                    System.out.println(Thread.currentThread().getName() + " 락 해제");
+                }
+            } finally {
+                dereferenceName(lockName);
+                System.out.println("이름 참조 해제");
+            }
+        } else {
+            System.err.println("이름 참조 실패.");
+        }
+    }
+
+    public int getCount() {
+        return count;
+    }
+}
+```
+
+>1. 한 스레드가 이름을 참조해서 작업을 수행한다
+>2. 한 스레드가 작업을 수행하려하지만 아직 이름을 참조하지 못해서 작업을 수행 못한다
+>3. 한 스레드가 이름을 참조했으나 다른 스레드가 작업 중이라 작업을 수행 못한다
+
+해당 코드의 테스트 결과는 아래와 같다.
+
+<img width="988" alt="스크린샷 2024-12-04 오후 9 04 52" src="https://github.com/user-attachments/assets/7dfea5c8-232d-4ec3-913e-6576a6f781da">
