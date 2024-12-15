@@ -11,7 +11,7 @@
 
 위의 특징들을 바탕으로 다양한 GC 알고리즘 및 동작 원리를 중점적으로 공부할 예정.
 
-## 알고리즘
+## 알고리즘 개념
 
 ### 1. 참조 카운팅 알고리즘
 
@@ -90,8 +90,22 @@ public class ReferenceCountingGC {
 
 마크 단계에서 죽은 객체를 제거하고 생존 판정을 받은 남은 객체들을 메모리의 한쪽 끝으로 밀어붙이는, 이른바 **압축(Compact)** 과정을 거쳐서 메모리 연속 공간을 확보하여 단편화 이슈를 해결한다. 설명이 단순하지만, 마크 카피에 비해 구현도가 복잡하고 객체 이동 비용이 마크 카피에 비해 상대적으로 더 비싼 편에 속한다. 마크 카피의 경우는 참조 주소를 업데이트하는 방식으로 복사, 즉 **순간이동**처럼 이뤄지지만, 마크 컴팩트는 실제로 객체를 **움직여 이동**하는 방식으로 압축이 이뤄지기 때문이다.
 
+## 실제 적용례
+
+### 1. G1 GC (Garbage First)
+
+### 2. Serial GC (직렬 GC)
+
+### 3. Parellel GC (병렬 GC)
+
+### 4. CMS GC (Concurrent Mark - Sweep)
+
+### 5. ZGC
+
 ---
 
 *참조*<br />
 *https://abiasforaction.net/understanding-jvm-garbage-collection-part-1/*<br />
-*https://abiasforaction.net/understanding-jvm-garbage-collection-part-2/*
+*https://abiasforaction.net/understanding-jvm-garbage-collection-part-2/*<br />
+*https://velog.io/@mirrorkyh/GC-%EC%A2%85%EB%A5%98%EC%99%80-%ED%8A%B9%EC%A7%95*<br />
+*https://www.baeldung.com/jvm-garbage-collectors*
