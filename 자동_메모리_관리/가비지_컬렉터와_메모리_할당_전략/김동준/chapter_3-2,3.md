@@ -117,14 +117,11 @@ Stop the world로 인해 애플리케이션을 일시정지함으로써 안전�
 
 생명 주기가 긴 객체를 GC 대상(Major GC or Full GC)으로 하는 영역으로 Young Gen에서 살아남은 객체가 복사되는 영역으로 Young 영역보다 크게 할당되며, 영역의 크기가 큰 만큼 가비지는 적게 발생한다. 정적인 정보(static)들이 주로 해당 영역에 위치하게 된다.
 
-세대를 거치면서 해당 위치에 따라 객체들은 다양한 GC 과정을 거쳐 정리된다. 그게 곧 위에서 언급한 Minor GC, Major GC이며 전체 영역에 대하여도 GC가 발생할 수도 있다.
+세대를 거치면서 해당 위치에 따라 객체들은 다양한 GC 과정을 거쳐 정리된다. 그게 곧 위에서 언급한 Minor GC, Major GC이며 전체 영역에 대하여도 GC가 발생할 수도 있다. 참고로 Minor GC에 비해 Major GC와 Full GC 의 작업 시간이 길기 때문에 Major GC와 Full GC 가 자주 일어나게 되면 장애가 발생할 위험이 높으므로 주의하여 설계해야 한다.
 
 >- Minor GC : Young 영역에서 실행되는 GC. 주로 0.x 초 단위로 작업이 종료된다.
 >- Major GC : Old 영역에서 실행되는 GC. 수초에서 수십초까지 작업이 진행된다.
 >- Full GC : Young, Old 전체 영역에 대한 GC
-
-💡주의할 점
-Minor GC에 비해 Major GC와 Full GC 의 작업 시간이 길기 때문에 Major GC와 Full GC 가 자주 일어나게 되면 장애가 발생할 위험이 높으므로 주의하여 설계해야 한다.
 
 ### 2. 종류
 
@@ -132,17 +129,72 @@ Minor GC에 비해 Major GC와 Full GC 의 작업 시간이 길기 때문에 Maj
 
 <img width="70%" alt="스크린샷 2024-12-17 오후 3 50 19" src="https://github.com/user-attachments/assets/a0466911-9e9e-4c60-aa02-93939b5deb30" />
 
-현재(JDK 21 시점) 자바 애플리케이션을 실행할 때 동작하는 디폴트 GC 구현체다.
+현재(JDK 21 시점) 자바 애플리케이션을 실행할 때 동작하는 디폴트 GC 구현체다. JDK 버전 9부터 도입되었으며 **Region**이라는 개념이 적용되는 GC 구현체이기도 하다. Reigon의 의의는, 세대의 위치가 고정되어있지 않는다는 것이다.
 
+<img src="https://github.com/user-attachments/assets/faac5b76-7a3f-4a5c-b6ac-2ccb9cd5c90c" width="50%" />
 
+위의 이미지처럼 Region이 블록처럼 분포되어 있으며, 동적으로 위치가 바뀐다. 참고로 하나의 region 크기에도 저장되지 못할 정도로 큰 객체들(humongous objects)은 처음 객체가 저장될 때에도 Young 영역이 아닌, Old 영역으로 바로 저장된다.
+
+![image](https://github.com/user-attachments/assets/b982e714-dc64-4edb-80b4-9626181674e5)
+
+G1 GC에서의 동작 과정은 크게 **Young Only** 과정과 **Space Reclamation** 과정이 존재하는데, 간단히 말해서 Young Only 과정은 Old 영역으로 객체를 할당하는 것이고 Space Reclamtion은 Young 영역과 Old 영역에서의 객체를 회수해가는 과정이다. Young Only는 Stop the world 상태에서 병렬로 수행되고 Young Gen만 처리하기 때문에 STW 시간이 짧다. Space Reclamation은 힙 전체를 수집하는 Full GC를 피하고, 부분적인 공간 회수만 수행하면서 애플리케이션 실행과 병렬로 처리된다.
+
+>#### Young Only 순서도
+>1. Initial Mark : Old Region에 남아있는 객체들이 참조하고 있는 Survivor Region을 찾는다. 이때 Stop The World가 발생한다.
+>2. Root Region Scan : Initial Mark 단계에서 찾은 Survivor Region에서 GC 작업 대상이 있는지 확인한다.
+>3. Concurrent Mark : Heap 영역에서 전체 Region을 스캔하며 GC 대상 객체가 발견되지 않은 Region은 다음 단계에서 제외되도록 한다.
+>4. Remark : 스캔이 끝나면 GC 대상에서 제외될 객체를 식별한다. 이때 Stop The World가 발생한다.
+>5. Clean up : 살아있는 객체가 가장 적은 Region 부터 사용되지 않은 객체를 제거한다. 이때 Stop The World가 발생한다. 완전히 비운 Region은 재사용 가능한 형태로 동작한다.
+>6. Copy : GC 대상이였지만 완전히 비워지지 않은 Region의 살아남은 객체들은 새로운 Region에 복사하여 Compaction 과정을 수행한다. 이때 Stop The World가 발생한다.
 
 #### (2) Serial GC (직렬 GC)
 
+<img width="613" alt="스크린샷 2024-12-17 오후 4 48 59" src="https://github.com/user-attachments/assets/fd83d49b-9d0e-4aae-85ec-39cec6766d63" />
+
+직렬 GC는 마크-스윕 + 컴팩트 알고리즘을 활용한다. 싱글 스레드로 동작하기 때문에 작업시간이 상당히 짧은 편이며 JDK 5 ~ 6에서 디폴트로 쓰인 GC 구현체다. 다만 단일 스레드에서 동작하기 때문에 병렬 처리가 불가능하고 멀티 CPU 코어를 활용할 수 없어서 성능이 제한적이다.
+
+실행 명령어 파라미터는 `-XX:+UseSerialGC`이다.
+
+<img width="70%" alt="스크린샷 2024-12-17 오후 4 47 43" src="https://github.com/user-attachments/assets/4ff3b59c-ba06-4103-9e46-f07193d2124f" />
+
 #### (3) Parellel GC (병렬 GC)
+
+<img width="577" alt="스크린샷 2024-12-17 오후 4 52 04" src="https://github.com/user-attachments/assets/7869572a-e66f-4645-81d1-7e9f6eef5ff6" />
+
+JDK 8까지 디폴트로 사용됐던 GC 구현체이며, 단일 스레드에서 동작하던 직렬 GC를 멀티 스레드 환경으로 옮긴 것으로 보면 된다. 동작 원리 및 알고리즘은 직렬 GC와 동일하며, 통상 Old 영역에서는 싱글 스레드로 수행되고 Young 영역에서는 멀티 스레드로 수행된다.
+
+실행 명령어 파라미터는 `-XX:+UseParallelGC`이다.
+
+<img width="70%" alt="스크린샷 2024-12-17 오후 4 54 22" src="https://github.com/user-attachments/assets/41b98b0e-64dc-4e5b-be34-063cc3472583" />
+
+첫 번째 로그는 Young GC 로그를 나타내며, 두 번째 로그는 Full GC 로그를 나타낸다. 직렬 GC보다는 낫지만 멀티 스레드 특성상, 많은 스레드 수가 할당되면 병목현상이 발생할 가능성이 높아지고 메모리 소비가 오히려 과해질 가능성도 존재한다.
 
 #### (4) CMS GC (Concurrent Mark - Sweep)
 
+<img width="568" alt="스크린샷 2024-12-17 오후 4 57 43" src="https://github.com/user-attachments/assets/02630a4c-1aa0-4cf4-88c7-74d6c7ab80a7" />
+
+병렬 GC가 직렬 GC에서 병렬 처리를 위한 발전 형태였다면 CMS GC는 STW의 기간을 줄이기 위해 도입된 GC 구현체이다. 기존의 직렬 GC가 직선적인 STW를 가짐으로써 애플리케이션 실행 중간의 큰 공백으로 차지하는 것을 막고자 도입된 개념이다. 다만 오히려 STW 예측이 불분명해지고 Full GC의 빈번함으로 인한 메모리 단편화 문제를 해결하지 못했기 때문에 JDK 9부터 deprecated 처리되고 JDK 14에서는 완전히 삭제됐다.
+
+>#### CMS GC 순서도
+>1. Initial Mark : Old Region에 남아있는 객체들이 참조하고 있는 Survivor Region을 찾는다. 이때 Stop The World가 발생한다.
+>2. Concurrent Mark : Heap 영역에서 전체 Region을 스캔하며 GC 대상 객체가 발견되지 않은 Region은 다음 단계에서 제외되도록 한다.
+>3. Remark : 스캔이 끝나면 GC 대상에서 제외될 객체를 식별한다. 이때 Stop The World가 발생한다.
+>4. Concurrent Sweep : 삭제할 객체들을 처리하며, 다른 스레드와 병렬로 처리된다.
+
+별도의 실행 명령어는 완전히 삭제됐기 때문에 존재하지 않는다. 기존 구식인 직렬 GC와 병렬 GC는 여전히 선택 가능한 옵션으로 남았음에도, CMS GC는 그 자체의 불안정한 성능과 Full GC 발생 가능성, 그리고 메모리 단편화 문제가 중요한 이슈로 받아들여진 모양이다.
+
+<img width="70%" alt="스크린샷 2024-12-17 오후 5 06 00" src="https://github.com/user-attachments/assets/ea5fbde2-46fd-4eaa-a60b-a5e4f3d79541" />
+
 #### (5) ZGC
+
+<img width="50%" src="https://github.com/user-attachments/assets/06b7b905-8a8b-44c6-8038-c8256808c6ba" />
+
+JDK 11부터 도입된 low latency 응답시간 GC 구현체로, 매우 짧은 STW를 통해 실시간 애플리케이션 등에 최적화된 GC다. ZGC의 압축 방식은, 삭제되고 난 후의 빈 곳을 찾아 채워넣는 것이 아닌 새로운 영역을 생성해서 생존 객체들을 채운다. 즉, G1 GC처럼 기존의 Region을 찾는 것이 아닌 GC가 실행될 때 마킹된 객체들을 새로운 Region을 동적으로 만들어 할당하고 죽은 객체가 차지한 Region은 GC가 수행되어 삭제된다. 다소 높은 메모리 사용량과 상대적으로 긴 초기화 시간이 단점으로 꼽힌다.
+
+실행 명령어 파라미터는 `-XX:+UseZGC`이다.
+
+<img width="70%" alt="스크린샷 2024-12-17 오후 5 17 51" src="https://github.com/user-attachments/assets/f1c417ff-a245-43e5-870a-4e88cb770023" />
+
 
 ---
 
