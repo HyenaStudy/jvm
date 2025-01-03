@@ -27,7 +27,7 @@
 <br>
 
 ## 3.6 저지연 가비지 컬렉터
-<img src="https://github.com/user-attachments/assets/09b86c21-5097-4238-99ed-755aa5877e99" width="500" />
+<img src="https://github.com/user-attachments/assets/09b86c21-5097-4238-99ed-755aa5877e99" width="500" /><br>
 - 응답 시간과 지연 시간 최소화를 목표로 함
 - 대부분의 GC 작업을 중단 없이 수행
 - 처리량, 지연 시간, 메모리 사용량 중 최대 2개만 달성 가능
